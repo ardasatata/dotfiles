@@ -3,11 +3,20 @@
 # ===========================================
 # Arda's Dotfiles Installer
 # ===========================================
+#
+# Uses a managed sections strategy to merge dotfiles
+# instead of replacing them entirely. This preserves
+# user customizations while keeping managed content
+# in sync.
 
 set -e
 
 DOTFILES_DIR="$HOME/dotfiles"
 BACKUP_DIR="$HOME/.dotfiles_backup/$(date +%Y%m%d_%H%M%S)"
+
+# Managed section markers
+MARKER_BEGIN="# BEGIN DOTFILES MANAGED"
+MARKER_END="# END DOTFILES MANAGED"
 
 # Colors for output
 RED='\033[0;31m'
@@ -38,28 +47,97 @@ clone_dotfiles() {
   fi
 }
 
-# Backup existing dotfile
-backup_file() {
+# Extract managed section content from a file
+extract_managed_section() {
   local file=$1
-  if [[ -e "$HOME/$file" ]] && [[ ! -L "$HOME/$file" ]]; then
-    mkdir -p "$BACKUP_DIR"
-    log_warn "Backing up existing $file to $BACKUP_DIR/"
-    mv "$HOME/$file" "$BACKUP_DIR/"
+  if [[ -f "$file" ]]; then
+    sed -n "/$MARKER_BEGIN/,/$MARKER_END/p" "$file"
   fi
 }
 
-# Create symlink
-link_file() {
+# Check if file contains managed section markers
+has_managed_section() {
+  local file=$1
+  if [[ -f "$file" ]]; then
+    grep -q "$MARKER_BEGIN" "$file" && grep -q "$MARKER_END" "$file"
+    return $?
+  fi
+  return 1
+}
+
+# Merge managed file content
+# - If dest doesn't exist: copy entire source
+# - If dest exists without markers: append managed section
+# - If dest exists with markers: replace managed section only
+merge_managed_file() {
   local src=$1
   local dest=$2
-  
-  if [[ -L "$dest" ]]; then
-    log_info "Removing existing symlink: $dest"
-    rm "$dest"
+
+  # Extract managed section from source
+  local managed_content
+  managed_content=$(extract_managed_section "$src")
+
+  if [[ -z "$managed_content" ]]; then
+    log_error "Source file $src has no managed section markers"
+    return 1
   fi
-  
-  log_info "Linking $src -> $dest"
-  ln -sf "$src" "$dest"
+
+  # Case 1: Destination doesn't exist - copy entire source
+  if [[ ! -e "$dest" ]]; then
+    log_info "Creating $dest (new file)"
+    cp "$src" "$dest"
+    return 0
+  fi
+
+  # Case 2: Destination is a symlink - handle migration
+  if [[ -L "$dest" ]]; then
+    log_warn "Migrating from symlink: $dest"
+    rm "$dest"
+
+    # Check for backup to restore
+    local backup_file
+    backup_file=$(find "$HOME/.dotfiles_backup" -name "$(basename "$dest")" -type f 2>/dev/null | sort | tail -1)
+
+    if [[ -n "$backup_file" ]]; then
+      log_info "Restoring from backup: $backup_file"
+      cp "$backup_file" "$dest"
+    else
+      log_info "No backup found, creating new file"
+      cp "$src" "$dest"
+      return 0
+    fi
+  fi
+
+  # Case 3: Destination exists without markers - append managed section
+  if ! has_managed_section "$dest"; then
+    log_info "Appending managed section to $dest"
+    echo "" >> "$dest"
+    echo "$managed_content" >> "$dest"
+    return 0
+  fi
+
+  # Case 4: Destination exists with markers - replace managed section
+  log_info "Updating managed section in $dest"
+
+  # Create temp file with updated content
+  local temp_file
+  temp_file=$(mktemp)
+
+  # Use awk for portable sed-like operations (works on macOS and Linux)
+  awk -v marker_begin="$MARKER_BEGIN" -v marker_end="$MARKER_END" '
+    BEGIN { in_section = 0 }
+    $0 ~ marker_begin { in_section = 1; next }
+    $0 ~ marker_end { in_section = 0; next }
+    !in_section { print }
+  ' "$dest" > "$temp_file"
+
+  # Add new managed section at the end
+  echo "$managed_content" >> "$temp_file"
+
+  # Replace original file
+  mv "$temp_file" "$dest"
+
+  return 0
 }
 
 # Main installation
@@ -74,16 +152,15 @@ main() {
   clone_dotfiles
   cd "$DOTFILES_DIR"
 
-  # List of dotfiles to symlink
+  # List of dotfiles to merge
   declare -a dotfiles=(
     ".zshrc"
   )
 
-  # Backup and link each dotfile
+  # Merge each dotfile
   for file in "${dotfiles[@]}"; do
     if [[ -f "$DOTFILES_DIR/$file" ]]; then
-      backup_file "$file"
-      link_file "$DOTFILES_DIR/$file" "$HOME/$file"
+      merge_managed_file "$DOTFILES_DIR/$file" "$HOME/$file"
     fi
   done
 
@@ -91,10 +168,6 @@ main() {
   log_info "Installation complete!"
   log_info "Run 'source ~/.zshrc' or open a new terminal to apply changes."
   echo ""
-  
-  if [[ -d "$BACKUP_DIR" ]]; then
-    log_warn "Your original dotfiles were backed up to: $BACKUP_DIR"
-  fi
 }
 
 main "$@"
