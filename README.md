@@ -46,6 +46,18 @@ This dotfiles repo uses a **managed sections** strategy instead of replacing ent
 | `gpull`    | Pull current branch from origin          |
 | `gfresh`   | Checkout default branch + pull latest    |
 
+### Claude Aliases (`.zshrc`)
+
+Aliases for switching between company (API billing) and personal (subscription) Claude accounts:
+
+| Alias | Account | Notes |
+|-------|---------|-------|
+| `claude-dangerous` | Company | Uses `$ANTHROPIC_API_KEY_COMPANY`, skips permissions |
+| `claude-personal` | Personal subscription | Isolated config dir (`~/.claude-personal`), drops inherited API key |
+| `claude-dangerous-personal` | Personal subscription | Same isolation + skips permissions |
+
+The company API key is loaded from `~/.zsh_secrets` (see [Secrets](#secrets) below).
+
 ### Default Configuration
 
 The repo `.zshrc` includes a sensible default setup:
@@ -54,6 +66,23 @@ The repo `.zshrc` includes a sensible default setup:
 - Java/Android SDK paths
 - PostgreSQL paths
 - Rancher Desktop integration
+
+## Secrets
+
+Sensitive values (API keys, tokens) go in `~/.zsh_secrets` — a file that lives outside this repo and is never committed:
+
+```bash
+# ~/.zsh_secrets
+export ANTHROPIC_API_KEY_COMPANY="sk-ant-api03-..."
+```
+
+The `.zshrc` sources this file automatically:
+
+```bash
+[ -f "$HOME/.zsh_secrets" ] && source "$HOME/.zsh_secrets"
+```
+
+Create this file manually on each machine after running `install.sh`.
 
 ## Machine-Specific Config
 

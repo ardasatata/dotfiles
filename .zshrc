@@ -43,8 +43,17 @@ export PATH="/opt/homebrew/opt/postgresql@15/bin:$PATH"
 # Local bin
 export PATH="$PATH:$HOME/.local/bin"
 
+# Secrets — loaded from an untracked local file (never committed to dotfiles repo)
+[ -f "$HOME/.zsh_secrets" ] && source "$HOME/.zsh_secrets"
+
 # Aliases
-alias claude-dangerous='claude --dangerously-skip-permissions'
+
+# Company account — API usage billing (key sourced from ~/.zsh_secrets)
+alias claude-dangerous='ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY_COMPANY" claude --dangerously-skip-permissions'
+
+# Personal subscription account — isolated config dir + no inherited API key
+alias claude-personal='CLAUDE_CONFIG_DIR=$HOME/.claude-personal env -u ANTHROPIC_API_KEY claude'
+alias claude-dangerous-personal='CLAUDE_CONFIG_DIR=$HOME/.claude-personal env -u ANTHROPIC_API_KEY claude --dangerously-skip-permissions'
 
 # BEGIN DOTFILES MANAGED
 # Git shortcuts - managed by dotfiles repo
